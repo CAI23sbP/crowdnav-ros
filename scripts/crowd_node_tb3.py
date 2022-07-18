@@ -13,11 +13,13 @@ from nav_msgs.msg import Odometry
 import configparser
 import torch
 import gym
+import os
 
 from crowd_nav.policy.cadrl import CADRL
 from crowd_nav.policy.lstm_rl import LstmRL
 from crowd_nav.policy.sarl import SARL
 from crowd_sim.envs.utils.robot import Robot
+from crowd_sim.envs.crowd_sim import CrowdSim
 
 
 PED_RADIUS = 0.3
@@ -65,7 +67,7 @@ class NN_tb3():
         # # sub
         self.sub_pose = rospy.Subscriber('/odom',Odometry,self.cbPose)
         self.sub_global_goal = rospy.Subscriber('/goal',PoseStamped, self.cbGlobalGoal)
-        self.sub_subgoal = rospy.Subscriber('/plan_manager/subgoal',PoseStamped, self.cbSubGoal)
+        self.sub_subgoal = rospy.Subscriber('~subgoal',PoseStamped, self.cbSubGoal)
         
         # subgoals
         self.sub_goal = Vector3()
@@ -151,7 +153,7 @@ class NN_tb3():
             if pref_speed < 0.2:
                 pref_speed = 0; v_x = 0; v_y = 0
             other_agents.append(agent.Agent(x, y, goal_x, goal_y, radius, pref_speed, heading_angle, index))
-        self.visualize_other_agents(xs, ys, radii, labels)
+        # self.visualize_other_agents(xs, ys, radii, labels)
         self.other_agents_state = other_agents
 
     def stop_moving(self):
@@ -278,9 +280,11 @@ def run():
 
     select_policy = {"cadrl":CADRL(),"lstm":LstmRL(),"sarl":SARL()}
     # the path of training result which contains configs and rl mode
-    env_config_file = 'crowd_nav/data/output/env.config'             #path beginging without slash
-    policy_config_file = 'crowd_nav/data/output/policy.config'
-    model_weights = 'crowd_nav/data/output/rl_model_'+policy_name+'.pth'
+    path_current_directory = os.path.dirname(__file__)
+    
+    env_config_file = os.path.join(path_current_directory, 'crowd_nav/data/output/', 'env.config')             #path beginging without slash
+    policy_config_file = os.path.join(path_current_directory, 'crowd_nav/data/output/', 'policy.config')
+    model_weights = os.path.join(path_current_directory, 'crowd_nav/data/output/' ,f'rl_model_{policy_name}.pth')
     # print(model_weights)
     # select policy
     policy = select_policy[policy_name]     #{SARL(),CADRL(),LstmRL()}
@@ -294,7 +298,7 @@ def run():
     # configure environment / obstacles
     env_config = configparser.RawConfigParser()
     env_config.read(env_config_file)
-    env = gym.make('CrowdSim-v0')   #env is inherited from CrowdSim class in crowd_sim.py
+    env = CrowdSim()   #env is inherited from CrowdSim class in crowd_sim.py
     env.configure(env_config)
   
     rospy.init_node('crowdnav_tb3',anonymous=False)
