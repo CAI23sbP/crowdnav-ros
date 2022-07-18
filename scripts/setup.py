@@ -20,7 +20,7 @@ setup(
         'matplotlib',
         'numpy',
         'scipy',
-        'torch',
+        'torch>=1.11.0',
         'torchvision',
     ],
     extras_require={
