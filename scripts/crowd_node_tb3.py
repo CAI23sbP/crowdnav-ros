@@ -171,10 +171,10 @@ class NN_tb3:
             ys.append(y)
             radii.append(radius)
             labels.append(index)
-
-        self.other_agents_state["pos"] = [xs, ys]
-        self.other_agents_state["v"] = [vx, vy]
-        self.other_agents_state["r"] = radii
+        if len(labels) > 0:
+            self.other_agents_state["pos"] = [xs, ys]
+            self.other_agents_state["v"] = [vx, vy]
+            self.other_agents_state["r"] = radii
 
     def stop_moving(self):
         twist = Twist()
@@ -195,10 +195,10 @@ class NN_tb3:
         if not self.goalReached():
             if abs(self.angle2Action) > 0.1 and self.angle2Action > 0:
                 twist.angular.z = -0.3
-                print("spinning in place +")
+                # print("spinning in place +")
             elif abs(self.angle2Action) > 0.1 and self.angle2Action < 0:
                 twist.angular.z = 0.3
-                print("spinning in place -")
+                # print("spinning in place -")
             # else:
             vel = np.array([self.desired_action[0], self.desired_action[1]])
             twist.linear.x = 0.1 * np.linalg.norm(vel)
@@ -237,16 +237,25 @@ class NN_tb3:
         obstacle_vy = [0.0, 0.0, 0.0, 0.0, 0.0]
         obstacle_radius = 0.3
 
-        if True:
+        humans = self.env_config.getint("sim", "human_num")
+        if len(self.other_agents_state) > 0:
+            print(self.other_agents_state)
+            obstacle_x = [0.0 for _ in range(humans)]
+            obstacle_y = [0.0 for _ in range(humans)]
+            obstacle_vx = [0.0 for _ in range(humans)]
+            obstacle_vy = [0.0 for _ in range(humans)]
+
             for prop in self.other_agents_state:
                 if prop == "pos":
                     x_y = self.other_agents_state[prop]
-                    for i in range(len(x_y[0])):
+                    _it = np.minimum(humans, len(x_y[0]))
+
+                    for i in range(_it):
                         obstacle_x[i] = x_y[0][i]
                         obstacle_y[i] = x_y[1][i]
                 if prop == "v":
                     v = self.other_agents_state[prop]
-                    for i in range(len(v[0])):
+                    for i in range(_it):
                         obstacle_vx[i] = v[0][i]
                         obstacle_vy[i] = v[1][i]
             # print(math.sqrt(obstacle_vx[3]**2+obstacle_vy[3]**2))
@@ -264,7 +273,7 @@ class NN_tb3:
                         print(i, vm)
 
         # initial obstacle instances and set value
-        for i in range(self.env_config.getint("sim", "human_num")):
+        for i in range(humans):
             self.env.humans[i].set(
                 obstacle_x[i],
                 obstacle_y[i],
