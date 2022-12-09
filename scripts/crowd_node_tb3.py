@@ -65,15 +65,15 @@ class NN_tb3:
         self.desired_action = np.zeros((2,))
 
         # # publishers
-        self.pub_twist = rospy.Publisher("/cmd_vel", Twist, queue_size=1)
+        self.pub_twist = rospy.Publisher("cmd_vel", Twist, queue_size=1)
         # self.pub_pose_marker = rospy.Publisher('',Marker,queue_size=1)
         # self.pub_agent_markers = rospy.Publisher('~agent_markers',MarkerArray,queue_size=1)
-        self.pub_path_marker = rospy.Publisher("/action", Marker, queue_size=1)
+        self.pub_path_marker = rospy.Publisher("action", Marker, queue_size=1)
         # self.pub_goal_path_marker = rospy.Publisher('~goal_path_marker',Marker,queue_size=1)
         # # sub
-        self.sub_pose = rospy.Subscriber("/odom", Odometry, self.cbPose)
-        self.sub_global_goal = rospy.Subscriber("/goal", PoseStamped, self.cbGlobalGoal)
-        self.sub_subgoal = rospy.Subscriber("~subgoal", PoseStamped, self.cbSubGoal)
+        self.sub_pose = rospy.Subscriber("odom", Odometry, self.cbPose)
+        self.sub_global_goal = rospy.Subscriber("goal", PoseStamped, self.cbGlobalGoal)
+        self.sub_subgoal = rospy.Subscriber("subgoal", PoseStamped, self.cbSubGoal)
 
         # subgoals
         self.sub_goal = Vector3()
