@@ -108,9 +108,9 @@ class NN_tb3:
         self.goal.header = msg.header
 
         # reset subgoals
-        print(
-            "new goal: " + str([self.goal.pose.position.x, self.goal.pose.position.y])
-        )
+        # print(
+        #     "new goal: " + str([self.goal.pose.position.x, self.goal.pose.position.y])
+        # )
 
     def cbSubGoal(self, msg):
         # update subGoal
@@ -239,7 +239,7 @@ class NN_tb3:
 
         humans = self.env_config.getint("sim", "human_num")
         if len(self.other_agents_state) > 0:
-            print(self.other_agents_state)
+            # print(self.other_agents_state)
             obstacle_x = [0.0 for _ in range(humans)]
             obstacle_y = [0.0 for _ in range(humans)]
             obstacle_vx = [0.0 for _ in range(humans)]
@@ -269,8 +269,8 @@ class NN_tb3:
                 v = self.other_agents_state["v"]
                 for i in range(len(v[0])):
                     vm = math.sqrt(v[0][i] ** 2 + v[1][i] ** 2)
-                    if vm > 0:
-                        print(i, vm)
+                    # if vm > 0:
+                    #     print(i, vm)
 
         # initial obstacle instances and set value
         for i in range(humans):
