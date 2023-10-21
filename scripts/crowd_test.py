@@ -27,7 +27,6 @@ from std_msgs.msg import ColorRGBA
 class TestNode():
     def __init__(self, env, env_config, policy):
         self.tb3 = RosNav('/goal','/plan_manager/subgoal')
-        # self.tb3 = RosNav('/goal','/goal')
         self.desired_speed = 0.3
         self.angle2Action = 0.0
 

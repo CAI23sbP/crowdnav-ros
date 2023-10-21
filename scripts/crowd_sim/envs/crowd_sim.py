@@ -206,47 +206,6 @@ class CrowdSim(gym.Env):
         human.set(px, py, gx, gy, 0, 0, 0)
         return human
 
-    # def get_human_times(self):
-    #     """
-    #     Run the whole simulation to the end and compute the average time for human to reach goal.
-    #     Once an agent reaches the goal, it stops moving and becomes an obstacle
-    #     (doesn't need to take half responsibility to avoid collision).
-
-    #     :return:
-    #     """
-    #     # centralized orca simulator for all humans
-    #     if not self.robot.reached_destination():
-    #         raise ValueError('Episode is not done yet')
-    #     params = (10, 10, 5, 5)
-    #     sim = rvo2.PyRVOSimulator(self.time_step, *params, 0.3, 1)
-    #     sim.addAgent(self.robot.get_position(), *params, self.robot.radius, self.robot.v_pref,
-    #                  self.robot.get_velocity())
-    #     for human in self.humans:
-    #         sim.addAgent(human.get_position(), *params, human.radius, human.v_pref, human.get_velocity())
-
-    #     max_time = 1000
-    #     while not all(self.human_times):
-    #         for i, agent in enumerate([self.robot] + self.humans):
-    #             vel_pref = np.array(agent.get_goal_position()) - np.array(agent.get_position())
-    #             if norm(vel_pref) > 1:
-    #                 vel_pref /= norm(vel_pref)
-    #             sim.setAgentPrefVelocity(i, tuple(vel_pref))
-    #         sim.doStep()
-    #         self.global_time += self.time_step
-    #         if self.global_time > max_time:
-    #             logging.warning('Simulation cannot terminate!')
-    #         for i, human in enumerate(self.humans):
-    #             if self.human_times[i] == 0 and human.reached_destination():
-    #                 self.human_times[i] = self.global_time
-
-    #         # for visualization
-    #         self.robot.set_position(sim.getAgentPosition(0))
-    #         for i, human in enumerate(self.humans):
-    #             human.set_position(sim.getAgentPosition(i + 1))
-    #         self.states.append([self.robot.get_full_state(), [human.get_full_state() for human in self.humans]])
-
-    #     del sim
-    #     return self.human_times
 
     def reset(self, phase='test', test_case=None):
         """
@@ -418,6 +377,11 @@ class CrowdSim(gym.Env):
                 raise NotImplementedError
 
         return ob, reward, done, info
+
+
+
+
+
 
     def render(self, mode='human', output_file=None):
         from matplotlib import animation
