@@ -9,7 +9,7 @@ class Config(object):
     env = BaseConfig()
     env.env_name = 'CrowdSimDict-v0'  # name of the environment
     env.time_limit = 50 # time limit of each episode (second)
-    env.time_step = 0.25 # length of each timestep/control frequency (second)
+    env.time_step = 0.1 # length of each timestep/control frequency (second)
     env.val_size = 100
     env.test_size = 500 # number of episodes for test.py
     env.randomize_attributes = True # randomize the preferred velocity and radius of humans or not
@@ -28,7 +28,7 @@ class Config(object):
 
     # environment settings
     sim = BaseConfig()
-    sim.render = False # show GUI for visualization
+    sim.render = True # show GUI for visualization
     sim.circle_radius = 6 # radius of the circle where all humans start on
     sim.human_num = 5 # total number of humans
     # Group environment: set to true; FoV environment: false
@@ -38,6 +38,7 @@ class Config(object):
     humans = BaseConfig()
     humans.visible = True # a human is visible to other humans and the robot
     # policy to control the humans: orca or social_force
+    # humans.policy = "social_force"
     humans.policy = "orca"
     humans.radius = 0.3 # radius of each human
     humans.v_pref = 1 # max velocity of each human
@@ -139,8 +140,8 @@ class Config(object):
     training.log_interval = 20  # log interval, one log per n updates
     training.use_proper_time_limits = False  # compute returns taking into account time limits
     training.cuda_deterministic = False  # sets flags for determinism when using CUDA (potentially slow!)
-    training.cuda = True  # use CUDA for training
-    training.num_processes = 12 # how many training CPU processes to use
+    training.cuda = False  # use CUDA for training
+    training.num_processes = 1 # how many training CPU processes to use
     training.output_dir = 'data/dummy'  # the saving directory for train.py
     training.resume = False  # resume training from an existing checkpoint or not
     training.load_path = 'data/example_model/checkpoints/27776.pt'  # if resume = True, load from the following checkpoint

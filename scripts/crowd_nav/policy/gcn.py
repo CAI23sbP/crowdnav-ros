@@ -5,7 +5,7 @@ import torch.nn as nn
 from torch.nn.functional import softmax, relu
 from torch.nn import Parameter
 from crowd_nav.policy.cadrl import mlp
-from crowd_nav.policy.multi_human_rl import MultiHumanRL
+from crowd_nav.policy.multi_human_rl_rgl import MultiHumanRL
 
 
 class ValueNetwork(nn.Module):

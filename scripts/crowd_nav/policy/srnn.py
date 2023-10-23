@@ -1,5 +1,5 @@
 
-from crowd_sim.envs.policy import Policy
+from crowd_sim.envs.policy.policy import Policy
 import numpy as np
 from crowd_sim.envs.utils.action import ActionRot, ActionXY
 

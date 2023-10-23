@@ -31,6 +31,9 @@ class Policy(object):
 
     def get_model(self):
         return self.model
+    
+    def set_time_step(self, time_step):
+        self.time_step = time_step
 
     @abc.abstractmethod
     def predict(self, state):
@@ -40,6 +43,9 @@ class Policy(object):
         """
         return
 
+    def get_model(self):
+        return self.model
+    
     @staticmethod
     def reach_destination(state):
         self_state = state.self_state

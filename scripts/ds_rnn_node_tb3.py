@@ -13,19 +13,12 @@ import math
 from nav_msgs.msg import Odometry
 import configparser
 import torch
-import gym
 import os
-from rosgraph_msgs.msg import Clock
 import copy
+from crowd_nav.configs.config_dsrnn import Config 
+from pytorchBaselines.a2c_ppo_acktr.model import Policy
 
-from crowd_nav.policy.cadrl import CADRL
-from crowd_nav.policy.lstm_rl import LstmRL
-from crowd_nav.policy.sarl import SARL
-from crowd_nav.policy.model_predictive_rl import ModelPredictiveRL
-from crowd_sim.envs.utils.robot import Robot
-from crowd_sim.envs.crowd_sim import CrowdSim
 from std_msgs.msg import Bool
-from crowd_nav.configs.config_rgl import *
 
 
 PED_RADIUS = 0.3
@@ -35,27 +28,17 @@ def find_angle_diff(angle_1, angle_2):
     angle_diff_raw = angle_1 - angle_2
     angle_diff = (angle_diff_raw + np.pi) % (2 * np.pi) - np.pi
     return angle_diff
-from std_srvs.srv import Empty
 
 class NN_tb3:
-    def __init__(self, env, env_config, policy,ns):
+    def __init__(self,policy_config,  env_config, policy, ns,device):
 
         #
         self.ns = ns
         self.ns_prefix = lambda x: os.path.join(self.ns, x)
-
-        self.env = env
         self.env_config = env_config
-        # configure robot
-        self.robot = Robot(env_config, "robot")
-        self.robot.set_policy(policy)
-
-        self.env.set_robot(self.robot)  # pass robot parameters into env
-        self.ob = env.reset(
-            "test", 1
-        )  # intial some parameters from .config file such as time_step,success_reward for other instances
+        self.device = device
         self.policy = policy
-        self.policy.set_env(env)
+        self.policy_config = policy_config
         # for action
         self.angle2Action = 0
         self.distance = 0
@@ -66,7 +49,7 @@ class NN_tb3:
         self.vel = Vector3()
         self.psi = 0.0
         self.num_poses = 0
-
+        self.fixed_time_interval = 0.1
         # for publishers
         self.global_goal = PoseStamped()
         self.goal = PoseStamped()
@@ -88,8 +71,8 @@ class NN_tb3:
         self.sub_clusters = rospy.Subscriber(self.ns_prefix("crowd_obs"), Clusters, self.cbClusters)
 
 
-
-
+        self.last_left = 0.
+        self.last_right = 0.
         self.desired_reset_num = int(rospy.get_param("/desired_resets",1))
         self.improved_action = bool(rospy.get_param("/imporved_action",False))
         print(f"[improved_action]:{self.improved_action}")
@@ -100,8 +83,26 @@ class NN_tb3:
         # control timer
         self.control_timer = rospy.Timer(rospy.Duration(0.1), self.cbControl)
         self.nn_timer = rospy.Timer(rospy.Duration(0.1), self.cbComputeActionCrowdNav)
+        self.eval_recurrent_hidden_states = {}
+        self.last_v = 0.0
+        self.last_w = 0.0
+        node_num = 1
+        edge_num = self.policy.base.human_num + 1
+        self.eval_recurrent_hidden_states['human_node_rnn'] = torch.zeros(1, node_num, self.policy_config.SRNN.human_node_rnn_size * 1,
+                                                                    device=self.device)
+
+        self.eval_recurrent_hidden_states['human_human_edge_rnn'] = torch.zeros(1, edge_num,
+                                                                        self.policy_config.SRNN.human_human_edge_rnn_size*1,
+                                                                        device=self.device)
+
+        self.eval_masks = torch.zeros(1, 1, device=self.device)
+
+        self.robot_vx = 0
+        self.robot_vy = 0
     
-    
+
+
+
     def vis_ob_range(self):
         marker = Marker()
         r, g, b, a = [0.9, 0.1, 0.1, 0.1]
@@ -119,10 +120,32 @@ class NN_tb3:
 
     def cbREset(self,msg):
         is_shut = Bool()
+
+
+
         if msg.data == True:
             self.reset_num += 1
             self.num_poses = 0
             
+            node_num = 1
+            edge_num = self.policy.base.human_num + 1
+            self.eval_recurrent_hidden_states['human_node_rnn'] = torch.zeros(1, node_num, 
+                                                                              self.policy_config.SRNN.human_node_rnn_size * 1,
+                                                                        device=self.device)
+
+            self.eval_recurrent_hidden_states['human_human_edge_rnn'] = torch.zeros(1, edge_num,
+                                                                            self.policy_config.SRNN.human_human_edge_rnn_size*1,
+                                                                            device=self.device)
+
+            self.eval_masks = torch.zeros(1, 1, device=self.device)
+            self.last_left  = 0.
+            self.last_right = 0.
+            self.desired_action = np.zeros((2,))
+            self.last_v = 0.0
+            self.last_w = 0.0
+            self.robot_vx = 0
+            self.robot_vy = 0
+
         if self.desired_reset_num- self.reset_num == 0:
             is_shut.data= True
             self.pub_shutdown.publish(is_shut.data)
@@ -251,7 +274,6 @@ class NN_tb3:
         if a <= -7*phi_tol:
             phi = 0.5
 
-        # print(phi, a)
         return phi
     
     def cbControl(self, event):
@@ -259,6 +281,10 @@ class NN_tb3:
         twist = Twist()
         if not self.goalReached():
             if self.improved_action:
+                act_norm = np.linalg.norm(self.desired_action)
+                if act_norm > 1.0:
+                    self.desired_action[0] = self.desired_action[0] / act_norm * 1.0
+                    self.desired_action[1] = self.desired_action[1] / act_norm * 1.0
                 vel = np.array([self.desired_action[0], self.desired_action[1]])
 
                 if abs(self.angle2Action) < math.pi/2:
@@ -275,7 +301,7 @@ class NN_tb3:
                     twist.angular.z = 0.3
                 vel = np.array([self.desired_action[0], self.desired_action[1]])
                 twist.linear.x = 0.2 * np.linalg.norm(vel)
-            # twist.linear.x =  np.linalg.norm(vel)
+
         self.pub_twist.publish(twist)
 
     def cbComputeActionCrowdNav(self, event):
@@ -284,7 +310,7 @@ class NN_tb3:
         # goal
         goal_x = self.sub_goal.x
         goal_y = self.sub_goal.y
-        # velocity
+
         robot_vx = self.vel.x
         robot_vy = self.vel.y
         # oriantation
@@ -292,17 +318,18 @@ class NN_tb3:
         robot_radius = 0.3
 
         # set robot info
-        self.robot.set(
-            robot_x, robot_y, goal_x, goal_y, robot_vx, robot_vy, theta, robot_radius
-        )
+        ob = {}
 
-        obstacle_x = [-6.0, -6.0, -6.0, -6.0, -6.0]
-        obstacle_y = [-6.0, -6.0, -6.0, -6.0, -6.0]
+        ob['robot_node'] = torch.tensor([[[robot_x, robot_y, robot_radius, goal_x, goal_y, 0.3, theta]]],dtype = torch.float32,device=self.device)
+        ob['temporal_edges'] = torch.tensor([[[robot_vx, robot_vy]]],dtype = torch.float32,device=self.device)
+        obstacle_x = torch.tensor([-6.0, -6.0, -6.0, -6.0, -6.0])
+        obstacle_y = torch.tensor([-6.0, -6.0, -6.0, -6.0, -6.0])
         # velocity
         obstacle_vx = [0.0, 0.0, 0.0, 0.0, 0.0]
         obstacle_vy = [0.0, 0.0, 0.0, 0.0, 0.0]
-        obstacle_radius = 0.2
+        
         humans = self.env_config.getint("sim", "human_num")
+        ob['spatial_edges'] = torch.zeros((1,humans, 2),device=self.device)
         if len(self.other_agents_state) > 0:
             
             obstacle_x = [0.0 for _ in range(humans)]
@@ -328,22 +355,17 @@ class NN_tb3:
                 v = self.other_agents_state["v"]
                 for i in range(len(v[0])):
                     vm = math.sqrt(v[0][i] ** 2 + v[1][i] ** 2)
+
         for i in range(humans):
-            self.env.humans[i].set(
-                obstacle_x[i],
-                obstacle_y[i],
-                goal_x,
-                goal_y,
-                obstacle_vx[i],
-                obstacle_vy[i],
-                theta,
-                obstacle_radius,
-            )
-            self.ob[i] = self.env.humans[i].get_observable_state()
-        # ************************************ Output ************************************
-        # get action info
-        action = self.robot.act(self.ob)
-        self.update_action(action)
+            relative_pos = torch.tensor([[[obstacle_x[i] - robot_x, obstacle_y[i] - robot_y]]],device=self.device)
+            ob['spatial_edges'][0][i] = relative_pos
+
+        _, action, _, self.eval_recurrent_hidden_states = self.policy.act(ob,
+                                                                          self.eval_recurrent_hidden_states,
+                                                                        self.eval_masks,
+                                                                        deterministic=True)
+        self.eval_masks = torch.tensor([[1.0]],dtype=torch.float32,device=self.device)
+        self.update_action(action[0].detach().numpy())
         self.update_angle2Action()
 
     def update_subgoal(self, subgoal):
@@ -404,68 +426,51 @@ class NN_tb3:
         self.stop_moving()
         rospy.loginfo("Stopped %s's velocity.")
 
+import gym
 
 def run():
     policy_name = str(rospy.get_param("/training_model","lstm")).lower()
     print(f"[policy_name]:{policy_name}")
     device = "cpu"
-    phase = "test"
-
-    # select_policy = {"cadrl": CADRL(), "lstm": LstmRL(), "sarl": SARL(),"gcn":GCN(),"dsrnn":DSRNN()}
-    select_policy = {"cadrl": CADRL(), "lstm": LstmRL(), "sarl": SARL(),"rgl":ModelPredictiveRL()}
     # the path of training result which contains configs and rl mode
     path_current_directory = os.path.dirname(__file__)
+
+    config = Config()
+
     
-    if policy_name in ['cadrl','lstm','sarl']:
-        env_config_file = os.path.join(
-            path_current_directory, "crowd_nav/data/output/", "env.config"
-        )  # path beginging without slash
-        policy_config_file = os.path.join(
-            path_current_directory, "crowd_nav/data/output/", "policy.config"
-        )
-        model_weights = os.path.join(
-            path_current_directory, "crowd_nav/data/output/", f"rl_model_{policy_name}.pth"
-        )
-        policy = select_policy[policy_name]  # {SARL(),CADRL(),LstmRL()}
-        policy_config = configparser.RawConfigParser()
-        policy_config.read(policy_config_file)
-        policy.configure(policy_config)
-        policy.get_model().load_state_dict(torch.load(model_weights))
-        policy.set_device(device)
-        policy.set_phase(phase)
+    env_config_file = os.path.join(
+        path_current_directory, "crowd_nav/data/output/", "env.config"
+    )  # path beginging without slash
 
-        # configure environment / obstacles
-        env_config = configparser.RawConfigParser()
-        env_config.read(env_config_file)
-        env = CrowdSim()  # env is inherited from CrowdSim class in crowd_sim.py
-        env.configure(env_config)
-    else:
-        env_config_file = os.path.join(
-            path_current_directory, "crowd_nav/data/output/", "env.config"
-        )  # path beginging without slash
-        model_weights = os.path.join(
-            path_current_directory, "crowd_nav/data/output/", f"rl_model_{policy_name}.pth"
-        )
+    model_weights = os.path.join(
+        path_current_directory, "crowd_nav/data/output/", f"rl_model_{policy_name}.pt"
+    )
+
+    env_config = configparser.RawConfigParser()
+    env_config.read(env_config_file)
+    d={}
+    # robot node: px, py, r, gx, gy, v_pref, theta
+    d['robot_node'] = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(1,7,), dtype = np.float32)
+    # only consider the robot temporal edge and spatial edges pointing from robot to each human
+    d['temporal_edges'] = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(1,2,), dtype=np.float32)
+    d['spatial_edges'] = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(5, 2), dtype=np.float32)
+    observation_space=gym.spaces.Dict(d)
+
+    high = np.inf * np.ones([2, ])
+    action_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
 
-        policy_config = PolicyConfig()
+    actor_critic = Policy(observation_space.spaces,  # pass the Dict into policy to parse
+		action_space,
+		base_kwargs=config,
+		base=config.robot.policy)
 
-        policy = select_policy[policy_name]  # {SARL(),CADRL(),LstmRL()}
-        policy.configure(policy_config)
-        policy.load_model(model_weights)
-        policy.set_device(device)
-        policy.set_phase(phase)
-        policy.set_time_step(0.1)
-        # configure environment / obstacles
-        env_config = configparser.RawConfigParser()
-        env_config.read(env_config_file)
-        env = CrowdSim()  # env is inherited from CrowdSim class in crowd_sim.py
-        env.configure(env_config)
-
-    rospy.init_node("crowdnav_tb3", anonymous=False)
+    actor_critic.load_state_dict(torch.load(model_weights,map_location=device))
+    policy_config = config
+    rospy.init_node("crowdnav_dsrnn", anonymous=False)
     print("==================================\ncrowdnav node started")
     ns = "/test_1/"
-    nn_tb3 = NN_tb3(env, env_config, policy, ns)
+    nn_tb3 = NN_tb3( policy_config,env_config, actor_critic, ns,device)
     rospy.on_shutdown(nn_tb3.on_shutdown)
     rospy.spin()
 
