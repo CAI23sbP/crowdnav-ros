@@ -86,7 +86,7 @@ class NN_tb3:
         self.sub_subgoal = rospy.Subscriber(self.ns_prefix("subgoal"), PoseStamped, self.cbSubGoal)
         self.sub_reset = rospy.Subscriber(self.ns_prefix("reset"), Bool, self.cbREset)
         self.sub_clusters = rospy.Subscriber(self.ns_prefix("crowd_obs"), Clusters, self.cbClusters)
-
+        self.new_global_goal_received = False
 
 
 
@@ -147,7 +147,6 @@ class NN_tb3:
         )
 
     def cbGlobalGoal(self, msg):
-        self.stop_moving_flag = True
         self.new_global_goal_received = True
         self.global_goal = msg
         self.goal.pose.position.x = msg.pose.position.x
@@ -255,27 +254,26 @@ class NN_tb3:
         return phi
     
     def cbControl(self, event):
-
         twist = Twist()
-        if not self.goalReached():
-            if self.improved_action:
-                vel = np.array([self.desired_action[0], self.desired_action[1]])
+        if self.new_global_goal_received:
+            if not self.goalReached():
+                if self.improved_action:
+                    vel = np.array([self.desired_action[0], self.desired_action[1]])
 
-                if abs(self.angle2Action) < math.pi/2:
-                    twist.linear.x = 0.3*np.linalg.norm(vel)
+                    if abs(self.angle2Action) < math.pi/2:
+                        twist.linear.x = 0.3*np.linalg.norm(vel)
+                    else:
+                        twist.linear.x = 0.1*np.linalg.norm(vel)
+
+                    twist.angular.z = self.max_yaw(self.angle2Action)
+
                 else:
-                    twist.linear.x = 0.1*np.linalg.norm(vel)
-
-                twist.angular.z = self.max_yaw(self.angle2Action)
-
-            else:
-                if abs(self.angle2Action) > 0.1 and self.angle2Action > 0:
-                    twist.angular.z = -0.3
-                elif abs(self.angle2Action) > 0.1 and self.angle2Action < 0:
-                    twist.angular.z = 0.3
-                vel = np.array([self.desired_action[0], self.desired_action[1]])
-                twist.linear.x = 0.2 * np.linalg.norm(vel)
-            # twist.linear.x =  np.linalg.norm(vel)
+                    if abs(self.angle2Action) > 0.1 and self.angle2Action > 0:
+                        twist.angular.z = -0.3
+                    elif abs(self.angle2Action) > 0.1 and self.angle2Action < 0:
+                        twist.angular.z = 0.3
+                    vel = np.array([self.desired_action[0], self.desired_action[1]])
+                    twist.linear.x = 0.2 * np.linalg.norm(vel)
         self.pub_twist.publish(twist)
 
     def cbComputeActionCrowdNav(self, event):
