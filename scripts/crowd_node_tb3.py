@@ -27,6 +27,7 @@ from crowd_sim.envs.crowd_sim import CrowdSim
 from std_msgs.msg import Bool
 from crowd_nav.configs.config_rgl import *
 
+from std_msgs.msg import Int16
 
 PED_RADIUS = 0.3
 # angle_1 - angle_2
@@ -43,7 +44,6 @@ class NN_tb3:
         #
         self.ns = ns
         self.ns_prefix = lambda x: os.path.join(self.ns, x)
-
         self.env = env
         self.env_config = env_config
         # configure robot
@@ -87,6 +87,9 @@ class NN_tb3:
         self.sub_reset = rospy.Subscriber(self.ns_prefix("reset"), Bool, self.cbREset)
         self.sub_clusters = rospy.Subscriber(self.ns_prefix("crowd_obs"), Clusters, self.cbClusters)
         self.new_global_goal_received = False
+        self.pub_reset = rospy.Publisher(self.ns_prefix("scenario_reset"),Int16,queue_size=1)
+        self.ns = self.ns.replace("/",'')
+        self.sub_goal = PoseStamped().pose.position
 
 
 
@@ -94,7 +97,6 @@ class NN_tb3:
         self.improved_action = bool(rospy.get_param("/imporved_action",False))
         print(f"[improved_action]:{self.improved_action}")
         # subgoals
-        self.sub_goal = Vector3()
         # get crowd:
         self.reset_num = 0
         # control timer
@@ -106,11 +108,11 @@ class NN_tb3:
         marker = Marker()
         r, g, b, a = [0.9, 0.1, 0.1, 0.1]
         marker.header.stamp = rospy.Time.now()
-        marker.header.frame_id = "test_1/map"
+        marker.header.frame_id = self.ns+"/map"
         marker.ns = "scan_range"
         marker.action = Marker.MODIFY
         marker.type = Marker.SPHERE
-        marker.scale = Vector3(5.0*2,5.0*2,0.1)
+        marker.scale = Vector3(10.0*2,10.0*2,0.1)
         marker.color = ColorRGBA(r, g, b, a)
         marker.lifetime = rospy.Duration(1)
         marker.pose.position.x = self.pose.pose.position.x
@@ -122,12 +124,12 @@ class NN_tb3:
         if msg.data == True:
             self.reset_num += 1
             self.num_poses = 0
-            
         if self.desired_reset_num- self.reset_num == 0:
             is_shut.data= True
             self.pub_shutdown.publish(is_shut.data)
             rospy.signal_shutdown("Everything is done")
         
+        self.pub_reset.publish(self.reset_num)
     
 
 
@@ -181,7 +183,6 @@ class NN_tb3:
         v_g = self.sub_goal
         v_pg = np.array([v_g.x - v_p.x, v_g.y - v_p.y])
         self.distance = np.linalg.norm(v_pg)
-        rospy.logwarn(self.distance)
 
     def cbVel(self, msg):
         self.vel = msg.twist.twist.linear
@@ -293,13 +294,12 @@ class NN_tb3:
         self.robot.set(
             robot_x, robot_y, goal_x, goal_y, robot_vx, robot_vy, theta, robot_radius
         )
-
         obstacle_x = [-6.0, -6.0, -6.0, -6.0, -6.0]
         obstacle_y = [-6.0, -6.0, -6.0, -6.0, -6.0]
         # velocity
         obstacle_vx = [0.0, 0.0, 0.0, 0.0, 0.0]
         obstacle_vy = [0.0, 0.0, 0.0, 0.0, 0.0]
-        obstacle_radius = 0.2
+        obstacle_radius = 0.4
         humans = self.env_config.getint("sim", "human_num")
         if len(self.other_agents_state) > 0:
             
@@ -351,7 +351,7 @@ class NN_tb3:
     def visualize_path(self):
         marker = Marker()
         marker.header.stamp = rospy.Time.now()
-        marker.header.frame_id = "test_1/map"
+        marker.header.frame_id = self.ns+"/map"
         marker.ns = "path_arrow"
         marker.id = 0
         marker.type = marker.ARROW
@@ -365,7 +365,7 @@ class NN_tb3:
 
         marker = Marker()
         marker.header.stamp = rospy.Time.now()
-        marker.header.frame_id = "test_1/map"
+        marker.header.frame_id = self.ns+"/map"
         marker.ns = 'path_trail'
         marker.id = self.num_poses 
         marker.type = marker.CUBE
@@ -383,7 +383,7 @@ class NN_tb3:
             if xs[i] !=0:
                 marker = Marker()
                 marker.header.stamp = rospy.Time.now()
-                marker.header.frame_id = "test_1/map"
+                marker.header.frame_id = self.ns+"/map"
                 marker.ns = 'other_agent'
                 marker.id = labels[i]
                 marker.type = marker.CYLINDER
@@ -462,7 +462,8 @@ def run():
 
     rospy.init_node("crowdnav_tb3", anonymous=False)
     print("==================================\ncrowdnav node started")
-    ns = "/test_1/"
+    ns = str(rospy.get_namespace())
+    rospy.logerr(f"[ns]:{ns}")
     nn_tb3 = NN_tb3(env, env_config, policy, ns)
     rospy.on_shutdown(nn_tb3.on_shutdown)
     rospy.spin()
