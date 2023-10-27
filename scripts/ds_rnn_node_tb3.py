@@ -77,7 +77,7 @@ class NN_tb3:
         self.improved_action = bool(rospy.get_param("/imporved_action",False))
         print(f"[improved_action]:{self.improved_action}")
         # subgoals
-        self.sub_goal = Vector3()
+        self.sub_goal = PoseStamped().pose.position
         # get crowd:
         self.reset_num = 0
         # control timer
@@ -99,7 +99,7 @@ class NN_tb3:
         self.new_global_goal_received = False
         self.robot_vx = 0
         self.robot_vy = 0
-    
+        self.ns = self.ns.replace("/",'')
 
 
 
@@ -107,7 +107,7 @@ class NN_tb3:
         marker = Marker()
         r, g, b, a = [0.9, 0.1, 0.1, 0.1]
         marker.header.stamp = rospy.Time.now()
-        marker.header.frame_id = "test_1/map"
+        marker.header.frame_id = self.ns+"/map"
         marker.ns = "scan_range"
         marker.action = Marker.MODIFY
         marker.type = Marker.SPHERE
@@ -120,8 +120,6 @@ class NN_tb3:
 
     def cbREset(self,msg):
         is_shut = Bool()
-
-
 
         if msg.data == True:
             self.reset_num += 1
@@ -145,7 +143,7 @@ class NN_tb3:
             self.last_w = 0.0
             self.robot_vx = 0
             self.robot_vy = 0
-
+            
         if self.desired_reset_num- self.reset_num == 0:
             is_shut.data= True
             self.pub_shutdown.publish(is_shut.data)
@@ -240,14 +238,13 @@ class NN_tb3:
             self.other_agents_state["pos"] = [xs, ys]
             self.other_agents_state["v"] = [vx, vy]
             self.other_agents_state["r"] = radii
-        self.visualize_other_agents(xs, ys, radii, labels)
+        self.visualize_other_agents(xs, ys, radii, labels, self.pose)
 
     def stop_moving(self):
         twist = Twist()
         self.pub_twist.publish(twist)
 
     def update_action(self, action):
-        self.desired_action = action
         self.desired_position.pose.position.x = self.pose.pose.position.x + (action[0])
         self.desired_position.pose.position.y = self.pose.pose.position.y + (action[1])
 
@@ -276,7 +273,7 @@ class NN_tb3:
         return phi
     
     def cbControl(self, event):
-
+        
         twist = Twist()
         if self.new_global_goal_received:
             if not self.goalReached():
@@ -286,6 +283,8 @@ class NN_tb3:
                         self.desired_action[0] = self.desired_action[0] / act_norm * 1.0
                         self.desired_action[1] = self.desired_action[1] / act_norm * 1.0
                     vel = np.array([self.desired_action[0], self.desired_action[1]])
+                    self.update_action(self.desired_action)
+                    self.update_angle2Action()
 
                     if abs(self.angle2Action) < math.pi/2:
                         twist.linear.x = 0.3*np.linalg.norm(vel)
@@ -359,14 +358,12 @@ class NN_tb3:
         for i in range(humans):
             relative_pos = torch.tensor([[[obstacle_x[i] - robot_x, obstacle_y[i] - robot_y]]],device=self.device)
             ob['spatial_edges'][0][i] = relative_pos
-
         _, action, _, self.eval_recurrent_hidden_states = self.policy.act(ob,
                                                                           self.eval_recurrent_hidden_states,
                                                                         self.eval_masks,
                                                                         deterministic=True)
         self.eval_masks = torch.tensor([[1.0]],dtype=torch.float32,device=self.device)
-        self.update_action(action[0].detach().numpy())
-        self.update_angle2Action()
+        self.desired_action = action[0].detach().numpy()
 
     def update_subgoal(self, subgoal):
         self.goal.pose.position.x = subgoal[0]
@@ -375,7 +372,7 @@ class NN_tb3:
     def visualize_path(self):
         marker = Marker()
         marker.header.stamp = rospy.Time.now()
-        marker.header.frame_id = "test_1/map"
+        marker.header.frame_id = self.ns+"/map"
         marker.ns = "path_arrow"
         marker.id = 0
         marker.type = marker.ARROW
@@ -389,7 +386,7 @@ class NN_tb3:
 
         marker = Marker()
         marker.header.stamp = rospy.Time.now()
-        marker.header.frame_id = "test_1/map"
+        marker.header.frame_id = self.ns+"/map"
         marker.ns = 'path_trail'
         marker.id = self.num_poses 
         marker.type = marker.CUBE
@@ -400,20 +397,20 @@ class NN_tb3:
         marker.lifetime = rospy.Duration(60)
         self.pub_path_marker.publish(marker)
 
-    def visualize_other_agents(self,xs,ys,radii,labels):
+    def visualize_other_agents(self,xs,ys,radii,labels , robot_pose):
         markers = MarkerArray()
         markers.markers.clear()
         for i in range(len(xs)):
             if xs[i] !=0:
                 marker = Marker()
                 marker.header.stamp = rospy.Time.now()
-                marker.header.frame_id = "test_1/map"
+                marker.header.frame_id = self.ns+"/map"
                 marker.ns = 'other_agent'
                 marker.id = labels[i]
                 marker.type = marker.CYLINDER
                 marker.action = marker.ADD
-                marker.pose.position.x = xs[i]
-                marker.pose.position.y = ys[i]
+                marker.pose.position.x = xs[i] -robot_pose.pose.position.x
+                marker.pose.position.y = ys[i]-robot_pose.pose.position.y
                 marker.scale = Vector3(x=2*0.2,y=2*0.2,z=1)
                 marker.color = ColorRGBA(r=1.0,g=0.4,a=0.3)
                 marker.lifetime = rospy.Duration(1)
@@ -469,7 +466,7 @@ def run():
     policy_config = config
     rospy.init_node("crowdnav_dsrnn", anonymous=False)
     print("==================================\ncrowdnav node started")
-    ns = "/test_1/"
+    ns = str(rospy.get_namespace())
     nn_tb3 = NN_tb3( policy_config,env_config, actor_critic, ns,device)
     rospy.on_shutdown(nn_tb3.on_shutdown)
     rospy.spin()
