@@ -13,7 +13,7 @@ from obstacle_detector.msg import Obstacles
 from geometry_msgs.msg import  PoseArray
 from message_filters import ApproximateTimeSynchronizer ,Subscriber
 import tf
-
+from std_msgs.msg import Int16
 class Observation_Crowd(object):
     def __init__(self,ns):
         self.ns = ns
@@ -46,11 +46,10 @@ class Observation_Crowd(object):
                                     AgentStates,
                                 self.cb_pedsim_data )
 
-
         self.sub_odom  = rospy.Subscriber(self.ns_prefix("odom"),
                             Odometry,
                             self.cb_odom )
-       
+        self.ns = self.ns.replace("/",'')
         self.X = 0
         self.Y = 0
 
@@ -75,13 +74,13 @@ class Observation_Crowd(object):
         crowd = msg_pos.poses
         vels = msg_vel.poses
         self.cluster = Clusters()
-        (trans, rot) = self.listener.lookupTransform('test_1/map', msg_pos.header.frame_id, rospy.Time(0))
+        (trans, rot) = self.listener.lookupTransform(self.ns+'/map', msg_pos.header.frame_id, rospy.Time(0))
         for index in range(len(crowd)):
             tmp_point = Point()
             tmp_vel = Vector3()
             tmp_id = index
-            tmp_point.x = crowd[index].position.x + trans[0]
-            tmp_point.y = crowd[index].position.y +trans[1]
+            tmp_point.x = crowd[index].position.x + trans[0] # transfrom to map
+            tmp_point.y = crowd[index].position.y + trans[1] # transfrom to map
             tmp_vel.x = vels[index].position.x
             tmp_vel.y = vels[index].position.y
             self.cluster.mean_points.append(tmp_point)
