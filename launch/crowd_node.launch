@@ -6,7 +6,7 @@
         
         <remap from="/clock" to ="/$(arg ns)/clock"/>
     </node>
-    <node pkg="crowdnav-ros" type="ds_rnn_node_tb3.py" name="crowd_node" output="screen"   if="$(eval arg('training_model') in ['DSRNN'])" ns = "$(arg ns)">
+    <node pkg="crowdnav-ros" type="ds_rnn_node_tb3.py" name="crowd_node" output="screen" ns = "$(arg ns)"  if="$(eval arg('training_model') in ['DSRNN'])" >
         
         <remap from="/clock" to ="/$(arg ns)/clock"/>
     </node>
